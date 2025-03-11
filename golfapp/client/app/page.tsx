@@ -32,7 +32,7 @@ export default function Home() {
       formData.append("video", videoBlob, "swing.mp4")
 
       // Send to Flask backend
-      const response = await fetch("http://localhost:5000/analyze", {
+      const response = await fetch("http://127.0.0.1:5000/analyze", {
         method: "POST",
         body: formData,
       })
