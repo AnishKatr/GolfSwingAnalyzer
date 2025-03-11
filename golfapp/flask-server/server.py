@@ -5,6 +5,7 @@ from groq import Groq
 import cv2
 import mediapipe as mp
 import tempfile
+import numpy as np
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -21,20 +22,69 @@ def analyze_swing(video_path):
     cap = cv2.VideoCapture(video_path)
     mp_pose = mp.solutions.pose
     pose = mp_pose.Pose()
+    
+    hip_angles = []
+    shoulder_tilts = []
+    club_positions = []
 
-    hip_rotation_angle = 45  # Placeholder
-    shoulder_tilt = 12       # Placeholder
-    club_path = "Out-to-in (causing a slice)"  # Placeholder
+    frame_count = 0
 
-    # Video analysis logic would go here
-    # Example: extract frames, analyze keypoints with mediapipe
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break  # Stop when the video ends
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = pose.process(frame_rgb)
+
+        if results.pose_landmarks:
+            landmarks = results.pose_landmarks.landmark
+
+            # **Extract Key Landmarks**
+            left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP]
+            right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]
+            left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
+            right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            left_wrist = landmarks[mp_pose.PoseLandmark.LEFT_WRIST]
+            right_wrist = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]
+
+            # **Calculate Hip Rotation Angle**
+            hip_rotation_angle = np.arctan2(
+                right_hip.y - left_hip.y, right_hip.x - left_hip.x
+            ) * (180.0 / np.pi)  # Convert from radians to degrees
+            hip_angles.append(abs(hip_rotation_angle))
+
+            # **Calculate Shoulder Tilt Angle**
+            shoulder_tilt = np.arctan2(
+                right_shoulder.y - left_shoulder.y, right_shoulder.x - left_shoulder.x
+            ) * (180.0 / np.pi)
+            shoulder_tilts.append(abs(shoulder_tilt))
+
+            # **Determine Club Path**
+            club_x_diff = right_wrist.x - left_wrist.x  # Difference in x-coordinates
+            club_positions.append(club_x_diff)
+
+        frame_count += 1
 
     cap.release()
 
+    # **Average Metrics Over the Swing**
+    avg_hip_rotation = np.mean(hip_angles) if hip_angles else 0
+    avg_shoulder_tilt = np.mean(shoulder_tilts) if shoulder_tilts else 0
+    avg_club_path = np.mean(club_positions) if club_positions else 0
+
+    # **Interpret Club Path**
+    if avg_club_path > 0.02:
+        club_path_result = "Inside-to-outside (hook)"
+    elif avg_club_path < -0.02:
+        club_path_result = "Outside-to-inside (slice)"
+    else:
+        club_path_result = "Straight"
+
     return {
-        "hip_rotation_angle": hip_rotation_angle,
-        "shoulder_tilt": shoulder_tilt,
-        "club_path": club_path,
+        "hip_rotation_angle": round(avg_hip_rotation, 2),
+        "shoulder_tilt": round(avg_shoulder_tilt, 2),
+        "club_path": club_path_result,
     }
 
 chat_history_store = []  # Store conversation in memory (temporary solution)
